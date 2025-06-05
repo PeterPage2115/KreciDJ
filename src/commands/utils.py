@@ -6,6 +6,10 @@ import psutil
 import platform
 from datetime import datetime, timezone
 import wavelink
+import time
+import asyncio
+import subprocess
+import re
 
 
 class UtilityCommands(commands.Cog):
@@ -25,19 +29,19 @@ class UtilityCommands(commands.Cog):
         
         # Music commands
         music_cmds = [
-            "`?join` - Dołącz do kanału głosowego",
-            "`?leave` - Opuść kanał głoswy", 
-            "`?play <query>` - Odtwórz muzykę",
-            "`?pause` - Zatrzymaj odtwarzanie",
-            "`?resume` - Wznów odtwarzanie",
-            "`?stop` - Zatrzymaj i wyczyść kolejkę",
-            "`?skip` - Pomiń aktualny utwór",
-            "`?queue` - Pokaż kolejkę utworów",
-            "`?volume <1-100>` - Zmień głośność",
-            "`?shuffle` - Przetasuj kolejkę",
-            "`?loop` - Zmień tryb powtarzania",
-            "`?nowplaying` - Aktualnie grany utwór",
-            "`?clear` - Wyczyść kolejkę"
+            "`!join` - Dołącz do kanału głosowego",
+            "`!leave` - Opuść kanał głosowy", 
+            "`!play <query>` - Odtwórz muzykę",
+            "`!pause` - Zatrzymaj odtwarzanie",
+            "`!resume` - Wznów odtwarzanie",
+            "`!stop` - Zatrzymaj i wyczyść kolejkę",
+            "`!skip` - Pomiń aktualny utwór",
+            "`!queue` - Pokaż kolejkę utworów",
+            "`!volume <1-100>` - Zmień głośność",
+            "`!shuffle` - Przetasuj kolejkę",
+            "`!loop` - Zmień tryb powtarzania",
+            "`!nowplaying` - Aktualnie grany utwór",
+            "`!clear` - Wyczyść kolejkę"
         ]
         
         embed.add_field(
@@ -48,10 +52,10 @@ class UtilityCommands(commands.Cog):
         
         # Utility commands
         util_cmds = [
-            "`?help` - Ta wiadomość",
-            "`?ping` - Sprawdź ping bota",
-            "`?stats` - Statystyki bota",
-            "`?info` - Informacje o bocie"
+            "`!help` - Ta wiadomość",
+            "`!ping` - Sprawdź ping bota",
+            "`!stats` - Statystyki bota",
+            "`!info` - Informacje o bocie"
         ]
         
         embed.add_field(
@@ -65,115 +69,213 @@ class UtilityCommands(commands.Cog):
             icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None
         )
         
-        # DON'T DELETE - keep help message
         await ctx.send(embed=embed)
     
     @commands.command(name='ping')
     async def ping(self, ctx):
-        """Check bot latency"""
-        embed = discord.Embed(
-            title="🏓 Pong!",
-            color=0x00ff00
-        )
+        """Check bot latency with accurate measurements"""
+        # Measure response time
+        start_time = time.perf_counter()
+        message = await ctx.send("🏓 Measuring latency...")
+        end_time = time.perf_counter()
         
-        # Bot latency
-        bot_latency = round(self.bot.latency * 1000)
-        embed.add_field(name="🤖 Bot Latency", value=f"{bot_latency}ms", inline=True)
+        response_time = round((end_time - start_time) * 1000, 1)
+        bot_latency = round(self.bot.latency * 1000, 1)
         
-        # Lavalink latency
+        # Simple and reliable Lavalink status check
         lavalink_latency = "N/A"
+        lavalink_status = "❌ Disconnected"
+        
         try:
             if wavelink.Pool.nodes:
                 node = list(wavelink.Pool.nodes.values())[0]
-                if hasattr(node, 'heartbeat'):
-                    lavalink_latency = f"{round(node.heartbeat * 1000)}ms"
-        except:
-            pass
+                if node and node.status == wavelink.NodeStatus.CONNECTED:
+                    # Simple connection check - reliable and fast
+                    lavalink_latency = "Connected ✅"
+                    lavalink_status = "🟢 Active"
+                    
+                    # Add players count if available
+                    try:
+                        if hasattr(node, 'players') and node.players:
+                            player_count = len([p for p in node.players.values() if p.connected])
+                            if player_count > 0:
+                                lavalink_latency = f"Connected ✅ ({player_count} active)"
+                    except:
+                        pass  # Keep simple "Connected ✅" if player count fails
+                else:
+                    lavalink_latency = "Disconnected"
+                    lavalink_status = "🔴 Inactive"
+            else:
+                lavalink_latency = "No nodes"
+                lavalink_status = "❌ No nodes"
+        except Exception as e:
+            lavalink_latency = "Error"
+            lavalink_status = "❌ Error"
         
-        embed.add_field(name="🎵 Lavalink Latency", value=lavalink_latency, inline=True)
-        
-        # Status indicators
-        if bot_latency < 100:
+        # Enhanced status indicators
+        if bot_latency < 100 and "🟢" in lavalink_status:
             status = "🟢 Doskonały"
-        elif bot_latency < 200:
+            color = 0x00ff00
+        elif bot_latency < 150:
             status = "🟡 Dobry"
+            color = 0xffff00
+        elif bot_latency < 300:
+            status = "🟠 Średni"
+            color = 0xff8800
         else:
             status = "🔴 Wysoki"
-            
-        embed.add_field(name="📊 Status", value=status, inline=True)
+            color = 0xff0000
         
-        # Delete after 10 seconds
-        await ctx.send(embed=embed)
+        # Create enhanced embed
+        embed = discord.Embed(
+            title="🏓 Pong!",
+            color=color,
+            timestamp=datetime.now(timezone.utc)
+        )
+        
+        embed.add_field(
+            name="🤖 Discord API", 
+            value=f"**{bot_latency}ms**", 
+            inline=True
+        )
+        embed.add_field(
+            name="🎵 Lavalink", 
+            value=f"**{lavalink_latency}**", 
+            inline=True
+        )
+        embed.add_field(
+            name="📊 Status", 
+            value=f"**{status}**", 
+            inline=True
+        )
+        embed.add_field(
+            name="⚡ Response Time", 
+            value=f"**{response_time}ms**", 
+            inline=False
+        )
+        
+        # Add performance indicators
+        if bot_latency < 100:
+            performance = "🚀 Excellent performance"
+        elif bot_latency < 200:
+            performance = "✅ Good performance"
+        elif bot_latency < 500:
+            performance = "⚠️ Moderate performance"
+        else:
+            performance = "🐌 Slow performance"
+            
+        embed.add_field(
+            name="📈 Performance", 
+            value=performance, 
+            inline=False
+        )
+        
+        embed.set_footer(text=f"Lavalink: {lavalink_status}")
+        
+        await message.edit(content="", embed=embed)
     
     @commands.command(name='stats', aliases=['statistics'])
     async def stats(self, ctx):
-        """Show bot statistics"""
-        # FIXED: Use timezone-aware datetime
+        """Show comprehensive bot statistics"""
+        # Calculate uptime
         uptime = datetime.now(timezone.utc) - self.bot.start_time.replace(tzinfo=timezone.utc)
         uptime_str = str(uptime).split('.')[0]
         
         embed = discord.Embed(
             title="📊 Statystyki Bota",
-            color=0x3498db
+            description="Szczegółowe informacje o działaniu bota",
+            color=0x3498db,
+            timestamp=datetime.now(timezone.utc)
         )
         
-        # Bot stats
-        embed.add_field(name="🏠 Serwery", value=len(self.bot.guilds), inline=True)
-        embed.add_field(name="👥 Użytkownicy", value=len(self.bot.users), inline=True)
-        embed.add_field(name="🎵 Połączenia głosowe", value=len(self.bot.voice_clients), inline=True)
+        # Basic bot stats
+        embed.add_field(name="🏠 Serwery", value=f"**{len(self.bot.guilds)}**", inline=True)
+        embed.add_field(name="👥 Użytkownicy", value=f"**{len(self.bot.users)}**", inline=True)
+        embed.add_field(name="🎵 Połączenia głosowe", value=f"**{len(self.bot.voice_clients)}**", inline=True)
         
-        embed.add_field(name="⏱️ Uptime", value=uptime_str, inline=True)
-        embed.add_field(name="💬 Komendy wykonane", value=self.bot.commands_executed, inline=True)
-        embed.add_field(name="🐍 Python", value=platform.python_version(), inline=True)
+        embed.add_field(name="⏱️ Uptime", value=f"**{uptime_str}**", inline=True)
+        embed.add_field(name="💬 Komendy wykonane", value=f"**{getattr(self.bot, 'commands_executed', 0)}**", inline=True)
+        embed.add_field(name="🐍 Python", value=f"**{platform.python_version()}**", inline=True)
         
-        # System stats
+        # Enhanced system stats
+        memory_mb = 0  # Initialize with default value
         try:
-            cpu_percent = psutil.cpu_percent()
-            memory = psutil.virtual_memory()
-            embed.add_field(name="💻 CPU", value=f"{cpu_percent}%", inline=True)
-            embed.add_field(name="🧠 RAM", value=f"{memory.percent}%", inline=True)
-        except:
-            embed.add_field(name="💻 System", value="N/A", inline=True)
-        
-        # Lavalink stats
-        lavalink_status = "❌ Disconnected"
-        if wavelink.Pool.nodes:
-            lavalink_status = "✅ Connected"
+            process = psutil.Process()
+            memory_info = process.memory_info()
+            memory_mb = round(memory_info.rss / 1024 / 1024, 1)
+            cpu_percent = round(process.cpu_percent(interval=0.1), 1)
             
-        embed.add_field(name="🎵 Lavalink", value=lavalink_status, inline=True)
+            # System-wide stats
+            system_memory = psutil.virtual_memory()
+            system_cpu = psutil.cpu_percent(interval=0.1)
+            
+            embed.add_field(name="💾 Bot RAM", value=f"**{memory_mb} MB**", inline=True)
+            embed.add_field(name="💻 Bot CPU", value=f"**{cpu_percent}%**", inline=True)
+            embed.add_field(name="🖥️ System RAM", value=f"**{system_memory.percent}%**", inline=True)
+            
+        except Exception as e:
+            embed.add_field(name="💻 System", value="**N/A**", inline=True)
+        
+        # Enhanced Lavalink stats
+        lavalink_info = "❌ Disconnected"
+        if wavelink.Pool.nodes:
+            connected_nodes = [n for n in wavelink.Pool.nodes.values() 
+                             if n.status == wavelink.NodeStatus.CONNECTED]
+            if connected_nodes:
+                node_count = len(connected_nodes)
+                total_nodes = len(wavelink.Pool.nodes)
+                lavalink_info = f"✅ **{node_count}/{total_nodes}** nodes active"
+            else:
+                lavalink_info = "🟠 **Nodes available but disconnected**"
+        
+        embed.add_field(name="🎵 Lavalink", value=lavalink_info, inline=True)
+        
+        # Add performance indicators
+        if memory_mb < 200:
+            memory_status = "🟢 Low"
+        elif memory_mb < 500:
+            memory_status = "🟡 Normal"
+        else:
+            memory_status = "🔴 High"
+            
+        embed.add_field(name="📈 Memory Status", value=f"**{memory_status}**", inline=True)
         
         embed.set_footer(
-            text=f"Bot ID: {self.bot.user.id}",
+            text=f"Bot ID: {self.bot.user.id} | {platform.system()} {platform.release()}",
             icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None
         )
         
-        # Delete after 15 seconds
         await ctx.send(embed=embed)
     
     @commands.command(name='info', aliases=['about'])
     async def info(self, ctx):
-        """Show bot information"""
+        """Show comprehensive bot information"""
         embed = discord.Embed(
             title="ℹ️ Informacje o Bocie",
-            description="Zaawansowany bot muzyczny dla Discord",
-            color=0x9b59b6
+            description="**KreciDJ** - Zaawansowany bot muzyczny dla Discord",
+            color=0x9b59b6,
+            timestamp=datetime.now(timezone.utc)
         )
         
-        embed.add_field(name="🔧 Wersja", value="1.0.0 ALPHA", inline=True)
-        embed.add_field(name="👨‍💻 Developer", value="KreciDev", inline=True)
-        embed.add_field(name="📚 Framework", value="discord.py 2.0+", inline=True)
+        # Basic info
+        embed.add_field(name="🔧 Wersja", value="**1.0.0 ALPHA**", inline=True)
+        embed.add_field(name="👨‍💻 Developer", value="**KreciDev**", inline=True)
+        embed.add_field(name="📚 Framework", value="**discord.py 2.3+**", inline=True)
         
-        embed.add_field(name="🎵 Music Engine", value="Wavelink + Lavalink", inline=True)
-        embed.add_field(name="🐍 Python", value=platform.python_version(), inline=True)
-        embed.add_field(name="🌐 Prefix", value=self.bot.command_prefix, inline=True)
+        embed.add_field(name="🎵 Music Engine", value="**Wavelink + Lavalink**", inline=True)
+        embed.add_field(name="🐍 Python", value=f"**{platform.python_version()}**", inline=True)
+        embed.add_field(name="🌐 Prefix", value=f"**{self.bot.command_prefix}**", inline=True)
         
+        # Enhanced features list
         features = [
-            "🎵 Wysokiej jakości odtwarzanie",
-            "📋 Zarządzanie kolejką", 
-            "🔀 Shuffle i loop",
-            "🎛️ Kontrola głośności",
-            "⏯️ Interaktywne przyciski",
-            "📊 Statystyki w czasie rzeczywistym"
+            "🎵 **Multi-source music** (YouTube, Spotify, SoundCloud)",
+            "📋 **Advanced queue management** (50 tracks max)", 
+            "🔀 **Shuffle, loop & repeat modes**",
+            "🎛️ **Volume control & equalizer**",
+            "⏯️ **Interactive control panel**",
+            "📊 **Real-time statistics & monitoring**",
+            "🛡️ **Auto-disconnect & error recovery**",
+            "⚡ **Low latency & high performance**"
         ]
         
         embed.add_field(
@@ -182,7 +284,32 @@ class UtilityCommands(commands.Cog):
             inline=False
         )
         
-        # Delete after 20 seconds
+        # Technical specs
+        tech_specs = [
+            f"**Environment:** {getattr(self.bot.config, 'ENVIRONMENT', 'production')}",
+            f"**Lavalink Host:** {getattr(self.bot.config, 'LAVALINK_HOST', 'N/A')}",
+            f"**Max Queue Size:** {getattr(self.bot.config, 'MAX_QUEUE_SIZE', 50)}",
+            f"**Health Monitoring:** Port {getattr(self.bot.config, 'HEALTH_CHECK_PORT', 8080)}"
+        ]
+        
+        embed.add_field(
+            name="⚙️ Konfiguracja",
+            value="\n".join(tech_specs),
+            inline=False
+        )
+        
+        # Links and support
+        embed.add_field(
+            name="🔗 Linki",
+            value="[GitHub Repository](https://github.com/PeterPage2115/KreciDJ)\n[Support Server](https://discord.gg/your-server)",
+            inline=True
+        )
+        
+        embed.set_thumbnail(url=self.bot.user.avatar.url if self.bot.user.avatar else None)
+        embed.set_footer(
+            text=f"Made with ❤️ by KreciDev | Uptime: {str(datetime.now(timezone.utc) - self.bot.start_time.replace(tzinfo=timezone.utc)).split('.')[0]}"
+        )
+        
         await ctx.send(embed=embed)
 
 
