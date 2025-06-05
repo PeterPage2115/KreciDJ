@@ -162,46 +162,26 @@ class MuzycznyBot(commands.Bot):
             await self.add_cog(MusicCommands(self))
             self.logger.info("✅ Loaded: MusicCommands")
             
-            # FIXED: Properly handle utility commands import
+            # Load utility commands
             try:
-                import importlib.util
-                spec = importlib.util.spec_from_file_location(
-                    "commands.utils", 
-                    "src/commands/utils.py"
-                )
-                if spec and spec.loader:
-                    utils_module = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(utils_module)
-                    if hasattr(utils_module, 'UtilityCommands'):
-                        await self.add_cog(utils_module.UtilityCommands(self))
-                        self.logger.info("✅ Loaded: UtilityCommands")
-                    else:
-                        self.logger.info("ℹ️ UtilityCommands class not found in utils.py")
-                else:
-                    self.logger.info("ℹ️ utils.py not found or empty")
+                from commands.utils import UtilityCommands
+                await self.add_cog(UtilityCommands(self))
+                self.logger.info("✅ Loaded: UtilityCommands")
+            except ImportError as e:
+                self.logger.info(f"ℹ️ UtilityCommands not available: {e}")
             except Exception as e:
-                self.logger.info(f"ℹ️ Could not load UtilityCommands: {e}")
+                self.logger.warning(f"⚠️ Could not load UtilityCommands: {e}")
             
-            # FIXED: Properly handle owner commands import
+            # Load owner commands
             try:
-                import importlib.util
-                spec = importlib.util.spec_from_file_location(
-                    "commands.owner_commands", 
-                    "src/commands/owner_commands.py"
-                )
-                if spec and spec.loader:
-                    owner_module = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(owner_module)
-                    if hasattr(owner_module, 'OwnerCommands'):
-                        await self.add_cog(owner_module.OwnerCommands(self))
-                        self.logger.info("✅ Loaded: OwnerCommands")
-                    else:
-                        self.logger.info("ℹ️ OwnerCommands class not found in owner_commands.py")
-                else:
-                    self.logger.info("ℹ️ owner_commands.py not found or empty")
+                from commands.owner_commands import OwnerCommands
+                await self.add_cog(OwnerCommands(self))
+                self.logger.info("✅ Loaded: OwnerCommands")
+            except ImportError as e:
+                self.logger.info(f"ℹ️ OwnerCommands not available: {e}")
             except Exception as e:
-                self.logger.info(f"ℹ️ Could not load OwnerCommands: {e}")
-            
+                self.logger.warning(f"⚠️ Could not load OwnerCommands: {e}")
+        
         except Exception as e:
             self.logger.error(f"❌ Failed to load extensions: {e}")
             self.logger.error(traceback.format_exc())
