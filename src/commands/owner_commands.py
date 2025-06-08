@@ -263,13 +263,13 @@ class OwnerCommands(commands.Cog):
 
     @admin.command(name="update")
     async def admin_update(self, ctx, force: Optional[str] = None):
-        """🔄 Update bot from GitHub with enhanced monitoring"""
+        """🔄 Update bot from GitHub - Container Safe Version"""
         force_update = force is not None and force.lower() in ['force', 'nuclear']
         nuclear_mode = force is not None and force.lower() == 'nuclear'
         
         embed = discord.Embed(
-            title="🔄 KreciDJ Update System v2.0",
-            description="🔍 Initializing update process...",
+            title="🔄 KreciDJ Update System v2.1",
+            description="🔍 Checking for updates...",
             color=0x00ff00,
             timestamp=datetime.utcnow()
         )
@@ -277,25 +277,22 @@ class OwnerCommands(commands.Cog):
         msg = await ctx.send(embed=embed)
         
         try:
-            # Step 1: Git fetch with timeout
-            embed.description = "📡 Checking for updates..."
-            await msg.edit(embed=embed)
-            
+            # Step 1: Git fetch (from inside container)
             fetch_process = subprocess.run(
-                ['timeout', '60', 'git', 'fetch', 'origin', 'main'], 
-                capture_output=True, text=True, cwd='/app'
+                ['git', 'fetch', 'origin', 'main'], 
+                capture_output=True, text=True, timeout=30
             )
             
             if fetch_process.returncode != 0:
-                embed.description = "❌ Failed to fetch updates (network/timeout)"
+                embed.description = "❌ Failed to fetch updates"
                 embed.color = 0xff0000
                 return await msg.edit(embed=embed)
             
             # Step 2: Compare versions
             local = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'], 
-                                 capture_output=True, text=True, cwd='/app').stdout.strip()
+                                 capture_output=True, text=True).stdout.strip()
             remote = subprocess.run(['git', 'rev-parse', '--short', 'origin/main'], 
-                                  capture_output=True, text=True, cwd='/app').stdout.strip()
+                                  capture_output=True, text=True).stdout.strip()
             
             embed.add_field(name="📊 Current", value=f"`{local}`", inline=True)
             embed.add_field(name="📊 Latest", value=f"`{remote}`", inline=True)
@@ -306,29 +303,35 @@ class OwnerCommands(commands.Cog):
                 embed.color = 0x00ff00
                 return await msg.edit(embed=embed)
             
-            # Step 3: Execute update script
-            embed.description = "🚀 Executing update script..."
-            embed.add_field(name="⏱️ Status", value="Starting update process...", inline=False)
+            # Step 3: Create update trigger file (safer approach)
+            embed.description = "🚀 Preparing update..."
+            embed.add_field(name="⏱️ Status", value="Creating update trigger...", inline=False)
             await msg.edit(embed=embed)
             
-            # Run update script with proper timeout and nuclear mode
-            script_args = ['bash', './scripts/docker-update.sh']
-            if nuclear_mode:
-                script_args.append('nuclear')
-            elif force_update:
-                script_args.append('force')
-                
-            # This will cause the bot to restart, so we send a final message
-            embed.description = "🔄 Update in progress - Bot will restart shortly..."
-            embed.fields[-1].value = f"Updating from `{local}` to `{remote}`\nThis may take 2-3 minutes..."
+            # Create update flag file that external script can detect
+            update_info = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "requested_by": str(ctx.author.id),
+                "current_version": local,
+                "target_version": remote,
+                "mode": "nuclear" if nuclear_mode else "standard"
+            }
+            
+            # Write update request to shared volume
+            with open('/app/data/update_request.json', 'w') as f:
+                json.dump(update_info, f, indent=2)
+            
+            # Final message before restart
+            embed.description = "🔄 Update triggered - Bot will restart shortly..."
+            embed.fields[-1].value = f"Updating from `{local}` to `{remote}`\n\n" \
+                                   "**Note:** Update will be handled by external script.\n" \
+                                   "Bot should restart within 2-3 minutes."
             embed.color = 0xffaa00
             await msg.edit(embed=embed)
             
-            # Start the update process (this will kill the current bot instance)
-            subprocess.Popen(script_args, cwd='/app')
-            
-            # Give a moment for the message to send before the bot shuts down
-            await asyncio.sleep(2)
+            # Give time for message to send, then exit to trigger restart
+            await asyncio.sleep(3)
+            await self.bot.close()
             
         except Exception as e:
             embed.description = f"❌ Update error: {str(e)}"
