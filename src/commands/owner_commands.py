@@ -113,19 +113,49 @@ class OwnerCommands(commands.Cog):
         )
         
         try:
-            # Container status
-            result = subprocess.run([
-                'docker', 'ps', '--filter', 'name=discord-bot', 
-                '--format', '{{.Status}}'
-            ], capture_output=True, text=True, timeout=10)
+            # Alternative: Check if we're running in Docker
+            if os.path.exists('/.dockerenv'):
+                embed.add_field(
+                    name="📊 Container Status", 
+                    value="✅ Running inside Docker container", 
+                    inline=False
+                )
+                
+                # Check container stats via /proc instead of docker command
+                try:
+                    with open('/proc/1/cgroup', 'r') as f:
+                        cgroup_info = f.read()
+                    if 'docker' in cgroup_info.lower():
+                        embed.add_field(
+                            name="🐳 Container Type", 
+                            value="Docker Container", 
+                            inline=True
+                        )
+                except:
+                    pass
+            else:
+                embed.add_field(
+                    name="📊 Container Status", 
+                    value="❌ Not running in Docker", 
+                    inline=False
+                )
             
-            status = result.stdout.strip() if result.stdout.strip() else "Not found"
-            embed.add_field(name="📊 Container", value=f"```{status}```", inline=False)
-            
+            # Try to get container ID from hostname
+            try:
+                with open('/etc/hostname', 'r') as f:
+                    container_id = f.read().strip()
+                embed.add_field(
+                    name="🆔 Container ID", 
+                    value=f"`{container_id}`", 
+                    inline=True
+                )
+            except:
+                pass
+                
         except Exception as e:
-            embed.add_field(name="📊 Container", value=f"❌ Error: {e}", inline=False)
+            embed.add_field(name="❌ Error", value=f"Docker info error: {e}", inline=False)
         
-        # Health check
+        # Health check (this should still work)
         try:
             health = subprocess.run(['curl', '-f', 'http://localhost:8080/health'], 
                                   capture_output=True, timeout=5)
@@ -137,12 +167,25 @@ class OwnerCommands(commands.Cog):
         
         # Version
         try:
-            with open('version.txt', 'r') as f:
+            with open('/app/version.txt', 'r') as f:  # Use /app path in container
                 version = f.read().strip()
         except:
-            version = "unknown"
-            
+            try:
+                with open('version.txt', 'r') as f:  # Fallback to relative path
+                    version = f.read().strip()
+            except:
+                version = "unknown"
+                
         embed.add_field(name="📦 Version", value=f"`{version}`", inline=True)
+        
+        # Environment info
+        embed.add_field(
+            name="🔧 Environment", 
+            value=f"ENV: {os.getenv('ENVIRONMENT', 'unknown')}\n"
+                  f"PWD: {os.getcwd()}\n"
+                  f"User: {os.getenv('USER', 'unknown')}", 
+            inline=True
+        )
         
         await ctx.send(embed=embed)
 

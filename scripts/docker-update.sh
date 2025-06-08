@@ -3,6 +3,17 @@ set -e
 
 echo "🚀 KreciDJ Auto-Update System"
 echo "================================"
+
+# Add nuclear option flag
+NUCLEAR_MODE=${1:-"normal"}
+
+if [ "$NUCLEAR_MODE" = "nuclear" ]; then
+    echo "💥 NUCLEAR MODE: Complete rebuild"
+    docker-compose down
+    docker system prune -f
+    docker rmi $(docker images | grep discord-bot | awk '{print $3}') 2>/dev/null || true
+fi
+
 echo "Container: kreci-dj-bot"
 echo "Time: $(date)"
 echo ""
