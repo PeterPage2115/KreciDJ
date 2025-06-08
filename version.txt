@@ -1,4 +1,1 @@
-1.0.0-alpha
-BUILD_DATE=2024-06-05
-COMMIT_HASH=initial
-FEATURES=basic_music_bot,docker_support,auto_update
+b90fd15

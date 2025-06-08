@@ -1,0 +1,40 @@
+services:
+  discord-bot:
+    build: .
+    container_name: kreci-dj-bot
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=production
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app/src
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./backups:/app/backups
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /usr/bin/docker:/usr/bin/docker:ro
+      - /usr/bin/docker-compose:/usr/bin/docker-compose:ro
+    ports:
+      - "9090:8080"  # Host port 9090 → Container port 8080
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - bot-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+networks:
+  bot-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
