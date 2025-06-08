@@ -11,6 +11,8 @@ from datetime import datetime, timedelta, timezone
 import traceback
 import signal
 import aiohttp
+import json
+from typing import Union
 
 # Import configurations and utilities
 from config import Config
@@ -251,6 +253,48 @@ class MuzycznyBot(commands.Bot):
             
             # Setup monitoring
             await self.setup_monitoring()
+            
+            print(f'✅ {self.user} is now online!')
+            print(f'📊 Bot ID: {self.user.id if self.user else "Unknown"}')
+            print(f'🔗 Invite URL: https://discord.com/api/oauth2/authorize?client_id={self.user.id if self.user else "0"}&permissions=8&scope=bot')
+            
+            # Check if this is a restart after update
+            update_complete_file = 'data/update_completed.json'
+            if os.path.exists(update_complete_file):
+                try:
+                    with open(update_complete_file, 'r') as f:
+                        update_data = json.load(f)
+                    
+                    channel_id = int(update_data.get('channel_id', 0))
+                    if channel_id:
+                        channel = self.get_channel(channel_id)
+                        
+                        # TYPE-SAFE: Only send to text-based channels
+                        if isinstance(channel, (discord.TextChannel, discord.DMChannel, discord.Thread)):
+                            embed = discord.Embed(
+                                title="✅ Update Completed Successfully!",
+                                description=f"🎉 **KreciDJ is back online!**\n\n"
+                                           f"📊 **Update Summary:**\n"
+                                           f"• Version: `{update_data.get('old_version', 'unknown')}` → `{update_data.get('new_version', 'unknown')}`\n"
+                                           f"• Mode: {update_data.get('mode', 'standard').title()}\n"
+                                           f"• Duration: ~{update_data.get('duration', 'unknown')}\n\n"
+                                           f"🔍 **System Status:**\n"
+                                           f"• Bot: 🟢 Online\n"
+                                           f"• Health: ✅ Healthy\n"
+                                           f"• Commands: 🚀 Ready",
+                                color=0x00ff00,
+                                timestamp=datetime.utcnow()
+                            )
+                            embed.set_footer(text="All systems operational")
+                            await channel.send(embed=embed)
+                        else:
+                            self.logger.warning(f"Channel {channel_id} is not a sendable channel type: {type(channel).__name__}")
+                    
+                    # Remove the completion file
+                    os.remove(update_complete_file)
+                    
+                except Exception as e:
+                    self.logger.error(f"Error sending update completion message: {e}")
             
         except Exception as e:
             self.logger.error(f"Error in on_ready: {e}")

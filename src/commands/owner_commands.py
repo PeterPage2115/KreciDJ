@@ -9,7 +9,7 @@ import subprocess
 import asyncio
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -263,7 +263,7 @@ class OwnerCommands(commands.Cog):
 
     @admin.command(name="update")
     async def admin_update(self, ctx, force: Optional[str] = None):
-        """🔄 Update bot from GitHub - Container Safe Version"""
+        """🔄 Update bot from GitHub - Enhanced with Real-Time Updates"""
         force_update = force is not None and force.lower() in ['force', 'nuclear']
         nuclear_mode = force is not None and force.lower() == 'nuclear'
         
@@ -278,6 +278,9 @@ class OwnerCommands(commands.Cog):
         
         try:
             # Step 1: Git fetch (from inside container)
+            embed.description = "📡 Fetching latest changes..."
+            await msg.edit(embed=embed)
+            
             fetch_process = subprocess.run(
                 ['git', 'fetch', 'origin', 'main'], 
                 capture_output=True, text=True, timeout=30
@@ -294,6 +297,8 @@ class OwnerCommands(commands.Cog):
             remote = subprocess.run(['git', 'rev-parse', '--short', 'origin/main'], 
                                   capture_output=True, text=True).stdout.strip()
             
+            # Clear previous fields and add new ones
+            embed.clear_fields()
             embed.add_field(name="📊 Current", value=f"`{local}`", inline=True)
             embed.add_field(name="📊 Latest", value=f"`{remote}`", inline=True)
             embed.add_field(name="🔧 Mode", value="Nuclear" if nuclear_mode else "Standard", inline=True)
@@ -301,35 +306,67 @@ class OwnerCommands(commands.Cog):
             if local == remote and not force_update:
                 embed.description = "✅ Already up to date!"
                 embed.color = 0x00ff00
+                embed.add_field(name="✅ Status", value="No updates needed", inline=False)
                 return await msg.edit(embed=embed)
             
-            # Step 3: Create update trigger file (safer approach)
+            # Step 3: Prepare update with progress indicator
             embed.description = "🚀 Preparing update..."
             embed.add_field(name="⏱️ Status", value="Creating update trigger...", inline=False)
+            embed.color = 0xffaa00
             await msg.edit(embed=embed)
             
-            # Create update flag file that external script can detect
+            # Step 4: Create update info with estimated time
             update_info = {
                 "timestamp": datetime.utcnow().isoformat(),
                 "requested_by": str(ctx.author.id),
                 "current_version": local,
                 "target_version": remote,
-                "mode": "nuclear" if nuclear_mode else "standard"
+                "mode": "nuclear" if nuclear_mode else "standard",
+                "channel_id": str(ctx.channel.id),
+                "message_id": str(msg.id)
             }
             
             # Write update request to shared volume
             with open('/app/data/update_request.json', 'w') as f:
                 json.dump(update_info, f, indent=2)
             
-            # Final message before restart
-            embed.description = "🔄 Update triggered - Bot will restart shortly..."
+            # Step 5: Final update message with progress tracking
+            embed.description = "🔄 Update in progress..."
             embed.fields[-1].value = f"Updating from `{local}` to `{remote}`\n\n" \
-                                   "**Note:** Update will be handled by external script.\n" \
-                                   "Bot should restart within 2-3 minutes."
-            embed.color = 0xffaa00
+                                   f"**Mode:** {'🔥 Nuclear' if nuclear_mode else '🔄 Standard'}\n" \
+                                   f"**Estimated time:** {'3-4 minutes' if nuclear_mode else '2-3 minutes'}\n" \
+                                   f"**Status:** Monitor will detect and execute update\n\n" \
+                                   "⏰ **Progress tracking:**\n" \
+                                   "└ 🔍 Update request created\n" \
+                                   "└ ⏳ Waiting for monitor detection...\n" \
+                                   "└ 🚀 Container rebuild will begin shortly"
+            
+            embed.color = 0xff9900
             await msg.edit(embed=embed)
             
-            # Give time for message to send, then exit to trigger restart
+            # Step 6: Send follow-up message that will survive restart
+            follow_up = discord.Embed(
+                title="🔄 Update Monitor Active",
+                description=f"**Update Process Started**\n\n"
+                           f"📋 **Request Details:**\n"
+                           f"• Version: `{local}` → `{remote}`\n"
+                           f"• Mode: {'Nuclear' if nuclear_mode else 'Standard'}\n"
+                           f"• Time: {datetime.utcnow().strftime('%H:%M:%S UTC')}\n\n"
+                           f"🤖 **Expected Process:**\n"
+                           f"1. Monitor detects request (10s)\n"
+                           f"2. Execute update script\n"
+                           f"3. {'Complete rebuild' if nuclear_mode else 'Standard rebuild'}\n"
+                           f"4. Health checks\n"
+                           f"5. Bot returns online\n\n"
+                           f"⏱️ **Estimated completion:** {(datetime.utcnow() + timedelta(minutes=4 if nuclear_mode else 3)).strftime('%H:%M UTC')}",
+                color=0x3498db,
+                timestamp=datetime.utcnow()
+            )
+            
+            follow_up.set_footer(text="Monitor this channel for bot return status")
+            await ctx.send(embed=follow_up)
+            
+            # Give time for messages to send, then exit to trigger restart
             await asyncio.sleep(3)
             await self.bot.close()
             
