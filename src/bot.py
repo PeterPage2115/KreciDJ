@@ -271,22 +271,62 @@ class MuzycznyBot(commands.Bot):
                         
                         # TYPE-SAFE: Only send to text-based channels
                         if isinstance(channel, (discord.TextChannel, discord.DMChannel, discord.Thread)):
-                            embed = discord.Embed(
-                                title="✅ Update Completed Successfully!",
-                                description=f"🎉 **KreciDJ is back online!**\n\n"
-                                           f"📊 **Update Summary:**\n"
-                                           f"• Version: `{update_data.get('old_version', 'unknown')}` → `{update_data.get('new_version', 'unknown')}`\n"
-                                           f"• Mode: {update_data.get('mode', 'standard').title()}\n"
-                                           f"• Duration: ~{update_data.get('duration', 'unknown')}\n\n"
-                                           f"🔍 **System Status:**\n"
-                                           f"• Bot: 🟢 Online\n"
-                                           f"• Health: ✅ Healthy\n"
-                                           f"• Commands: 🚀 Ready",
-                                color=0x00ff00,
-                                timestamp=datetime.utcnow()
-                            )
-                            embed.set_footer(text="All systems operational")
+                            success = update_data.get('success', True)
+                            
+                            if success:
+                                embed = discord.Embed(
+                                    title="🎉 Update Completed Successfully!",
+                                    description=f"**KreciDJ is back online and ready!**\n\n"
+                                               f"🔄 **Update Summary:**\n"
+                                               f"• **Version:** `{update_data.get('old_version', 'unknown')}` → `{update_data.get('new_version', 'unknown')}`\n"
+                                               f"• **Mode:** {update_data.get('mode', 'standard').title()} {'💥' if update_data.get('mode') == 'nuclear' else '🔄'}\n"
+                                               f"• **Duration:** {update_data.get('duration', 'unknown')}\n"
+                                               f"• **Completed:** {update_data.get('completion_time', 'unknown')}\n\n"
+                                               f"✅ **System Status:**\n"
+                                               f"• Bot: 🟢 Online\n"
+                                               f"• Health: ✅ Healthy\n"
+                                               f"• Commands: 🚀 Ready\n"
+                                               f"• Guilds: {len(self.guilds)} servers\n"
+                                               f"• Latency: {round(self.latency * 1000)}ms",
+                                    color=0x00ff00,
+                                    timestamp=datetime.utcnow()
+                                )
+                                embed.set_footer(text="All systems operational • Auto-update completed")
+                                
+
+                                # Mention the user who requested the update if available
+                                requested_by = update_data.get('requested_by')
+                                if requested_by and requested_by != 'unknown':
+                                    try:
+                                        user = self.get_user(int(requested_by))
+                                        if user:
+                                            embed.set_author(name=f"Update requested by {user.display_name}", icon_url=user.avatar.url if user.avatar else None)
+                                    except:
+                                        pass
+                                
+
+                            else:
+                                # Failed update
+                                embed = discord.Embed(
+                                    title="❌ Update Failed",
+                                    description=f"**Update process encountered an error**\n\n"
+                                               f"🔄 **Attempted Update:**\n"
+                                               f"• **Version:** `{update_data.get('old_version', 'unknown')}` → `{update_data.get('new_version', 'unknown')}`\n"
+                                               f"• **Mode:** {update_data.get('mode', 'standard').title()}\n"
+                                               f"• **Duration:** {update_data.get('duration', 'unknown')}\n"
+                                               f"• **Error:** {update_data.get('error', 'Unknown error')}\n\n"
+                                               f"🔍 **Current Status:**\n"
+                                               f"• Bot: 🟢 Online (rollback)\n"
+                                               f"• Health: ⚠️ Previous version\n"
+                                               f"• Commands: 🚀 Functional",
+                                    color=0xff6b6b,
+                                    timestamp=datetime.utcnow()
+                                )
+                                embed.set_footer(text="Check logs for details • Manual intervention may be required")
+                            
+
                             await channel.send(embed=embed)
+                            self.logger.info(f"✅ Sent update completion message to channel {channel_id}")
                         else:
                             self.logger.warning(f"Channel {channel_id} is not a sendable channel type: {type(channel).__name__}")
                     

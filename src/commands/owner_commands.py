@@ -346,24 +346,28 @@ class OwnerCommands(commands.Cog):
             
             # Step 6: Send follow-up message that will survive restart
             follow_up = discord.Embed(
-                title="🔄 Update Monitor Active",
-                description=f"**Update Process Started**\n\n"
-                           f"📋 **Request Details:**\n"
-                           f"• Version: `{local}` → `{remote}`\n"
-                           f"• Mode: {'Nuclear' if nuclear_mode else 'Standard'}\n"
-                           f"• Time: {datetime.utcnow().strftime('%H:%M:%S UTC')}\n\n"
-                           f"🤖 **Expected Process:**\n"
-                           f"1. Monitor detects request (10s)\n"
-                           f"2. Execute update script\n"
-                           f"3. {'Complete rebuild' if nuclear_mode else 'Standard rebuild'}\n"
-                           f"4. Health checks\n"
-                           f"5. Bot returns online\n\n"
-                           f"⏱️ **Estimated completion:** {(datetime.utcnow() + timedelta(minutes=4 if nuclear_mode else 3)).strftime('%H:%M UTC')}",
+                title="🔄 Update Process Initiated",
+                description=f"**Nuclear Update In Progress** 💥\n\n"
+                           f"📋 **Update Details:**\n"
+                           f"• **Version:** `{local}` → `{remote}`\n"
+                           f"• **Mode:** Nuclear (Complete Rebuild)\n"
+                           f"• **Started:** {datetime.utcnow().strftime('%H:%M:%S UTC')}\n"
+                           f"• **Requested by:** {ctx.author.mention}\n\n"
+                           f"⚙️ **Process Steps:**\n"
+                           f"1. ✅ Update request created\n"
+                           f"2. ⏳ Monitor detection (10s)\n"
+                           f"3. 🔄 Git pull & backup\n"
+                           f"4. 🐳 Container rebuild\n"
+                           f"5. 🏥 Health verification\n"
+                           f"6. 🎉 Completion notification\n\n"
+                           f"⏱️ **Estimated completion:** {(datetime.utcnow() + timedelta(minutes=4)).strftime('%H:%M UTC')}\n"
+                           f"📬 **Status updates will be posted here automatically**",
                 color=0x3498db,
                 timestamp=datetime.utcnow()
             )
             
-            follow_up.set_footer(text="Monitor this channel for bot return status")
+            follow_up.set_footer(text="Monitor this channel • Automatic status updates enabled")
+            follow_up.set_thumbnail(url="https://cdn.discordapp.com/emojis/847135239901896757.gif")  # Loading GIF if available
             await ctx.send(embed=follow_up)
             
             # Give time for messages to send, then exit to trigger restart

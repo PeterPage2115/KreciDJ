@@ -14,14 +14,17 @@ if [ -f "$UPDATE_REQUEST_FILE" ]; then
         MODE=$(jq -r '.mode // "standard"' "$UPDATE_REQUEST_FILE" 2>/dev/null)
         CHANNEL_ID=$(jq -r '.channel_id // ""' "$UPDATE_REQUEST_FILE" 2>/dev/null)
         OLD_VERSION=$(jq -r '.current_version // "unknown"' "$UPDATE_REQUEST_FILE" 2>/dev/null)
+        REQUESTED_BY=$(jq -r '.requested_by // "unknown"' "$UPDATE_REQUEST_FILE" 2>/dev/null)
     else
         MODE="standard"
         CHANNEL_ID=""
         OLD_VERSION="unknown"
+        REQUESTED_BY="unknown"
     fi
     
     echo "🔧 Update mode: $MODE"
     echo "📍 Channel ID: $CHANNEL_ID"
+    echo "👤 Requested by: $REQUESTED_BY"
     
     # Record start time
     START_TIME=$(date +%s)
@@ -59,10 +62,28 @@ if [ -f "$UPDATE_REQUEST_FILE" ]; then
   "new_version": "$NEW_VERSION",
   "mode": "$MODE",
   "duration": "${DURATION}s",
-  "success": true
+  "requested_by": "$REQUESTED_BY",
+  "success": true,
+  "completion_time": "$(date '+%Y-%m-%d %H:%M:%S UTC')"
 }
 EOF
-        echo "✅ Update completion notification prepared"
+        echo "✅ Update completion notification prepared for channel $CHANNEL_ID"
+    elif [ $UPDATE_EXIT_CODE -ne 0 ] && [ -n "$CHANNEL_ID" ]; then
+        cat > "$UPDATE_COMPLETE_FILE" << EOF
+{
+  "timestamp": "$(date -Iseconds)",
+  "channel_id": "$CHANNEL_ID",
+  "old_version": "$OLD_VERSION",
+  "new_version": "$NEW_VERSION",
+  "mode": "$MODE",
+  "duration": "${DURATION}s",
+  "requested_by": "$REQUESTED_BY",
+  "success": false,
+  "error": "Update failed with exit code $UPDATE_EXIT_CODE",
+  "completion_time": "$(date '+%Y-%m-%d %H:%M:%S UTC')"
+}
+EOF
+        echo "❌ Update failure notification prepared"
     fi
     
     if [ $UPDATE_EXIT_CODE -eq 0 ]; then
