@@ -1,121 +1,111 @@
 #!/bin/bash
 set -e
 
-echo "🚀 KreciDJ Auto-Update System"
-echo "================================"
-
-# Add nuclear option flag
-NUCLEAR_MODE=${1:-"normal"}
-
-if [ "$NUCLEAR_MODE" = "nuclear" ]; then
-    echo "💥 NUCLEAR MODE: Complete rebuild"
-    docker-compose down
-    docker system prune -f
-    docker rmi $(docker images | grep discord-bot | awk '{print $3}') 2>/dev/null || true
-fi
-
-echo "Container: kreci-dj-bot"
-echo "Time: $(date)"
-echo ""
+echo "🚀 KreciDJ Auto-Update System v2.0"
+echo "=================================="
 
 # Configuration
-CONTAINER_NAME="kreci-dj-bot"
-BACKUP_DIR="backups/update_$(date +%Y%m%d_%H%M%S)"
-HEALTH_URL="http://localhost:8080/health"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+LOG_FILE="$PROJECT_DIR/logs/update.log"
+BACKUP_DIR="$PROJECT_DIR/backups/auto_$(date +%Y%m%d_%H%M%S)"
 
-# Function to log with timestamp
+# Logging function
 log() {
-    echo "[$(date '+%H:%M:%S')] $1"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
 }
 
-# Create backup
-log "💾 Creating backup..."
-mkdir -p "$BACKUP_DIR"
-if [ -d "data" ]; then
-    cp -r data/ "$BACKUP_DIR/" 2>/dev/null || true
-fi
-if [ -d "logs" ]; then
-    cp -r logs/ "$BACKUP_DIR/" 2>/dev/null || true  
-fi
-if [ -f ".env" ]; then
-    cp .env "$BACKUP_DIR/" 2>/dev/null || true
-fi
-log "✅ Backup created: $BACKUP_DIR"
+# Error handling
+cleanup() {
+    log "❌ Update interrupted or failed"
+    exit 1
+}
+trap cleanup INT TERM
 
-# Check for updates
-log "🔍 Checking for updates..."
-git fetch origin main
+# Nuclear mode check
+NUCLEAR_MODE=${1:-"normal"}
 
-LOCAL_COMMIT=$(git rev-parse HEAD)
-REMOTE_COMMIT=$(git rev-parse origin/main)
+log "🔍 Starting update process (mode: $NUCLEAR_MODE)"
 
-if [ "$LOCAL_COMMIT" = "$REMOTE_COMMIT" ]; then
-    log "✅ Already up to date!"
-    log "Current version: $(git rev-parse --short HEAD)"
+# Change to project directory
+cd "$PROJECT_DIR"
+
+# Step 1: Git fetch and check
+log "📡 Fetching latest changes..."
+timeout 60 git fetch origin main || {
+    log "❌ Git fetch timeout"
+    exit 1
+}
+
+LOCAL_COMMIT=$(git rev-parse --short HEAD)
+REMOTE_COMMIT=$(git rev-parse --short origin/main)
+
+log "📊 Current: $LOCAL_COMMIT, Remote: $REMOTE_COMMIT"
+
+if [ "$LOCAL_COMMIT" = "$REMOTE_COMMIT" ] && [ "$NUCLEAR_MODE" != "force" ]; then
+    log "✅ Already up to date"
     exit 0
 fi
 
-log "📥 Updates found!"
-log "Current: $(git rev-parse --short HEAD)"
-log "Latest:  $(git rev-parse --short origin/main)"
+# Step 2: Create backup
+log "💾 Creating backup..."
+mkdir -p "$BACKUP_DIR"
+cp -r src/ "$BACKUP_DIR/" 2>/dev/null || true
+cp -r data/ "$BACKUP_DIR/" 2>/dev/null || true
+cp .env "$BACKUP_DIR/" 2>/dev/null || true
+log "✅ Backup created: $BACKUP_DIR"
 
-# Show what's changing
-log "📋 Recent changes:"
-git log --oneline HEAD..origin/main | head -5
+# Step 3: Pull changes
+log "📥 Pulling latest changes..."
+timeout 60 git reset --hard origin/main || {
+    log "❌ Git pull timeout"
+    exit 1
+}
 
-# Pull changes
-log "⬇️ Pulling latest changes..."
-git reset --hard origin/main
+# Step 4: Docker operations
+log "🐳 Updating Docker container..."
 
-# Update version file
-git rev-parse --short HEAD > version.txt
-log "📝 Version file updated: $(cat version.txt)"
-
-# Check if Docker Compose is running
-if ! docker-compose ps | grep -q "kreci-dj-bot"; then
-    log "⚠️ Container not running, starting fresh..."
-    docker-compose up -d
-    sleep 20
+if [ "$NUCLEAR_MODE" = "nuclear" ]; then
+    log "💥 Nuclear mode: Complete rebuild"
+    timeout 300 docker-compose down || true
+    timeout 60 docker system prune -f || true
+    timeout 60 docker rmi $(docker images | grep discord-bot | awk '{print $3}') 2>/dev/null || true
+    timeout 600 docker-compose build --no-cache --pull
 else
-    # Rebuild and restart
-    log "🔨 Rebuilding container..."
-    docker-compose build --no-cache discord-bot
-    
-    log "🔄 Restarting container..."
-    docker-compose down
-    docker-compose up -d
+    log "🔄 Standard update"
+    timeout 120 docker-compose down
+    timeout 300 docker-compose build --no-cache
 fi
 
-# Wait for startup
-log "⏳ Waiting for bot to start..."
-sleep 25
+# Step 5: Start services
+log "🚀 Starting services..."
+timeout 120 docker-compose up -d
 
-# Health check with retries
-log "🏥 Running health check..."
-for i in {1..6}; do
-    if curl -f "$HEALTH_URL" >/dev/null 2>&1; then
-        log "✅ Update successful! Bot is healthy."
-        
-        # Show final status
-        log "📊 Final status:"
-        docker-compose ps
-        
-        # Cleanup old backups (keep last 5)
-        log "🧹 Cleaning up old backups..."
-        ls -dt backups/update_* 2>/dev/null | tail -n +6 | xargs rm -rf 2>/dev/null || true
-        
-        log "🎉 Update completed successfully!"
-        exit 0
+# Step 6: Health check
+log "🏥 Running health checks..."
+sleep 30
+
+# Multiple health check attempts
+for i in {1..5}; do
+    if curl -f http://localhost:8080/health &>/dev/null; then
+        log "✅ Health check passed (attempt $i)"
+        break
+    else
+        log "⚠️ Health check failed (attempt $i/5)"
+        if [ $i -eq 5 ]; then
+            log "❌ Health check failed after 5 attempts"
+            exit 1
+        fi
+        sleep 10
     fi
-    log "⏳ Health check attempt $i/6..."
-    sleep 10
 done
 
-log "❌ Health check failed after update!"
-log "📋 Recent logs:"
-docker-compose logs --tail=20 discord-bot
+# Step 7: Update version info
+NEW_COMMIT=$(git rev-parse --short HEAD)
+echo "$NEW_COMMIT" > version.txt
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Updated from $LOCAL_COMMIT to $NEW_COMMIT" >> logs/update_history.log
 
-log "🔄 Attempting rollback to backup..."
-# Could add rollback logic here if needed
+log "🎉 Update completed successfully!"
+log "📍 Version: $LOCAL_COMMIT → $NEW_COMMIT"
 
-exit 1
+exit 0

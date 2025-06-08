@@ -113,49 +113,19 @@ class OwnerCommands(commands.Cog):
         )
         
         try:
-            # Alternative: Check if we're running in Docker
-            if os.path.exists('/.dockerenv'):
-                embed.add_field(
-                    name="📊 Container Status", 
-                    value="✅ Running inside Docker container", 
-                    inline=False
-                )
-                
-                # Check container stats via /proc instead of docker command
-                try:
-                    with open('/proc/1/cgroup', 'r') as f:
-                        cgroup_info = f.read()
-                    if 'docker' in cgroup_info.lower():
-                        embed.add_field(
-                            name="🐳 Container Type", 
-                            value="Docker Container", 
-                            inline=True
-                        )
-                except:
-                    pass
-            else:
-                embed.add_field(
-                    name="📊 Container Status", 
-                    value="❌ Not running in Docker", 
-                    inline=False
-                )
+            # Container status
+            result = subprocess.run([
+                'docker', 'ps', '--filter', 'name=discord-bot', 
+                '--format', '{{.Status}}'
+            ], capture_output=True, text=True, timeout=10)
             
-            # Try to get container ID from hostname
-            try:
-                with open('/etc/hostname', 'r') as f:
-                    container_id = f.read().strip()
-                embed.add_field(
-                    name="🆔 Container ID", 
-                    value=f"`{container_id}`", 
-                    inline=True
-                )
-            except:
-                pass
-                
+            status = result.stdout.strip() if result.stdout.strip() else "Not found"
+            embed.add_field(name="📊 Container", value=f"```{status}```", inline=False)
+            
         except Exception as e:
-            embed.add_field(name="❌ Error", value=f"Docker info error: {e}", inline=False)
+            embed.add_field(name="📊 Container", value=f"❌ Error: {e}", inline=False)
         
-        # Health check (this should still work)
+        # Health check
         try:
             health = subprocess.run(['curl', '-f', 'http://localhost:8080/health'], 
                                   capture_output=True, timeout=5)
@@ -167,25 +137,12 @@ class OwnerCommands(commands.Cog):
         
         # Version
         try:
-            with open('/app/version.txt', 'r') as f:  # Use /app path in container
+            with open('version.txt', 'r') as f:
                 version = f.read().strip()
         except:
-            try:
-                with open('version.txt', 'r') as f:  # Fallback to relative path
-                    version = f.read().strip()
-            except:
-                version = "unknown"
-                
+            version = "unknown"
+            
         embed.add_field(name="📦 Version", value=f"`{version}`", inline=True)
-        
-        # Environment info
-        embed.add_field(
-            name="🔧 Environment", 
-            value=f"ENV: {os.getenv('ENVIRONMENT', 'unknown')}\n"
-                  f"PWD: {os.getcwd()}\n"
-                  f"User: {os.getenv('USER', 'unknown')}", 
-            inline=True
-        )
         
         await ctx.send(embed=embed)
 
@@ -264,61 +221,76 @@ class OwnerCommands(commands.Cog):
             await ctx.send(f"❌ Error getting logs: {e}")
 
     @admin.command(name="update")
-    async def admin_update(self, ctx, force: Optional[str] = None):  # FIXED: Add Optional type hint
-        """🔄 Update bot from GitHub"""
-        force_update = force is not None and force.lower() == 'force'  # FIXED: Check for None properly
+    async def admin_update(self, ctx, force: Optional[str] = None):
+        """🔄 Update bot from GitHub with enhanced monitoring"""
+        force_update = force is not None and force.lower() in ['force', 'nuclear']
+        nuclear_mode = force is not None and force.lower() == 'nuclear'
         
         embed = discord.Embed(
-            title="🔄 Update System",
-            description="Checking for updates...",
-            color=0x00ff00
+            title="🔄 KreciDJ Update System v2.0",
+            description="🔍 Initializing update process...",
+            color=0x00ff00,
+            timestamp=datetime.utcnow()
         )
         
         msg = await ctx.send(embed=embed)
         
         try:
-            # Check git status
-            subprocess.run(['git', 'fetch', 'origin', 'main'], timeout=30)
+            # Step 1: Git fetch with timeout
+            embed.description = "📡 Checking for updates..."
+            await msg.edit(embed=embed)
             
+            fetch_process = subprocess.run(
+                ['timeout', '60', 'git', 'fetch', 'origin', 'main'], 
+                capture_output=True, text=True, cwd='/app'
+            )
+            
+            if fetch_process.returncode != 0:
+                embed.description = "❌ Failed to fetch updates (network/timeout)"
+                embed.color = 0xff0000
+                return await msg.edit(embed=embed)
+            
+            # Step 2: Compare versions
             local = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'], 
-                                 capture_output=True, text=True).stdout.strip()
+                                 capture_output=True, text=True, cwd='/app').stdout.strip()
             remote = subprocess.run(['git', 'rev-parse', '--short', 'origin/main'], 
-                                  capture_output=True, text=True).stdout.strip()
+                                  capture_output=True, text=True, cwd='/app').stdout.strip()
             
-            embed.add_field(name="Current", value=f"`{local}`", inline=True)
-            embed.add_field(name="Remote", value=f"`{remote}`", inline=True)
+            embed.add_field(name="📊 Current", value=f"`{local}`", inline=True)
+            embed.add_field(name="📊 Latest", value=f"`{remote}`", inline=True)
+            embed.add_field(name="🔧 Mode", value="Nuclear" if nuclear_mode else "Standard", inline=True)
             
             if local == remote and not force_update:
                 embed.description = "✅ Already up to date!"
+                embed.color = 0x00ff00
                 return await msg.edit(embed=embed)
             
-            # Execute update
-            embed.description = "📥 Updating..."
-            embed.add_field(name="Status", value="Running update script...", inline=False)
+            # Step 3: Execute update script
+            embed.description = "🚀 Executing update script..."
+            embed.add_field(name="⏱️ Status", value="Starting update process...", inline=False)
             await msg.edit(embed=embed)
             
-            # Run update script
-            if os.path.exists('./scripts/docker-update.sh'):
-                result = subprocess.run(['bash', './scripts/docker-update.sh'], 
-                                      capture_output=True, text=True, timeout=180)
+            # Run update script with proper timeout and nuclear mode
+            script_args = ['bash', './scripts/docker-update.sh']
+            if nuclear_mode:
+                script_args.append('nuclear')
+            elif force_update:
+                script_args.append('force')
                 
-                if result.returncode == 0:
-                    embed.description = "✅ Update successful!"
-                    embed.color = 0x00ff00
-                else:
-                    embed.description = "❌ Update failed!"
-                    embed.color = 0xff0000
-                    # FIXED: Handle potential None stderr
-                    error_text = result.stderr[-500:] if result.stderr else "No error details"
-                    embed.fields[-1].value = f"Error: {error_text}"
-            else:
-                embed.description = "❌ Update script not found!"
-                embed.color = 0xff0000
-            
+            # This will cause the bot to restart, so we send a final message
+            embed.description = "🔄 Update in progress - Bot will restart shortly..."
+            embed.fields[-1].value = f"Updating from `{local}` to `{remote}`\nThis may take 2-3 minutes..."
+            embed.color = 0xffaa00
             await msg.edit(embed=embed)
+            
+            # Start the update process (this will kill the current bot instance)
+            subprocess.Popen(script_args, cwd='/app')
+            
+            # Give a moment for the message to send before the bot shuts down
+            await asyncio.sleep(2)
             
         except Exception as e:
-            embed.description = f"❌ Update error: {e}"
+            embed.description = f"❌ Update error: {str(e)}"
             embed.color = 0xff0000
             await msg.edit(embed=embed)
 
