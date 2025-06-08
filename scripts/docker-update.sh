@@ -69,7 +69,7 @@ if [ "$NUCLEAR_MODE" = "nuclear" ]; then
     log "💥 Nuclear mode: Complete rebuild"
     timeout 300 docker-compose down || true
     timeout 60 docker system prune -f || true
-    timeout 60 docker rmi $(docker images | grep discord-bot | awk '{print $3}') 2>/dev/null || true
+    timeout 60 docker rmi $(docker images | grep kreci-dj-bot | awk '{print $3}') 2>/dev/null || true
     timeout 600 docker-compose build --no-cache --pull
 else
     log "🔄 Standard update"
@@ -81,13 +81,13 @@ fi
 log "🚀 Starting services..."
 timeout 120 docker-compose up -d
 
-# Step 6: Health check
+# Step 6: Health check (use external port 9090)
 log "🏥 Running health checks..."
 sleep 30
 
 # Multiple health check attempts
 for i in {1..5}; do
-    if curl -f http://localhost:8080/health &>/dev/null; then
+    if curl -f http://localhost:9090/health &>/dev/null; then
         log "✅ Health check passed (attempt $i)"
         break
     else

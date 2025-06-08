@@ -113,19 +113,36 @@ class OwnerCommands(commands.Cog):
         )
         
         try:
-            # Container status
+            # Now with Docker access, we can get real container info
             result = subprocess.run([
-                'docker', 'ps', '--filter', 'name=discord-bot', 
+                'docker', 'ps', '--filter', 'name=kreci-dj-bot', 
                 '--format', '{{.Status}}'
             ], capture_output=True, text=True, timeout=10)
             
-            status = result.stdout.strip() if result.stdout.strip() else "Not found"
-            embed.add_field(name="📊 Container", value=f"```{status}```", inline=False)
-            
+            if result.returncode == 0 and result.stdout.strip():
+                status = result.stdout.strip()
+                embed.add_field(name="📊 Container Status", value=f"```{status}```", inline=False)
+                
+                # Get detailed container info
+                detail_result = subprocess.run([
+                    'docker', 'inspect', 'kreci-dj-bot', 
+                    '--format', '{{.State.Status}} | {{.Config.Image}} | {{.RestartCount}}'
+                ], capture_output=True, text=True, timeout=10)
+                
+                if detail_result.returncode == 0:
+                    details = detail_result.stdout.strip().split(' | ')
+                    embed.add_field(name="🔍 Details", value=f"State: `{details[0]}`\nImage: `{details[1]}`\nRestarts: `{details[2]}`", inline=True)
+            else:
+                embed.add_field(name="📊 Container Status", value="❌ Container not found", inline=False)
+                
         except Exception as e:
-            embed.add_field(name="📊 Container", value=f"❌ Error: {e}", inline=False)
+            # Fallback to container-internal checks
+            if os.path.exists('/.dockerenv'):
+                embed.add_field(name="📊 Container Status", value="✅ Running in Docker", inline=False)
+            else:
+                embed.add_field(name="📊 Container Status", value=f"❌ Docker error: {e}", inline=False)
         
-        # Health check
+        # Health check - use internal port since we're inside container
         try:
             health = subprocess.run(['curl', '-f', 'http://localhost:8080/health'], 
                                   capture_output=True, timeout=5)
@@ -135,14 +152,38 @@ class OwnerCommands(commands.Cog):
             
         embed.add_field(name="🏥 Health", value=health_status, inline=True)
         
+        # Port mapping info
+        embed.add_field(name="🌐 Ports", value="Host: `9090` → Container: `8080`", inline=True)
+        
         # Version
         try:
-            with open('version.txt', 'r') as f:
+            with open('/app/version.txt', 'r') as f:
                 version = f.read().strip()
         except:
-            version = "unknown"
-            
+            try:
+                with open('version.txt', 'r') as f:
+                    version = f.read().strip()
+            except:
+                version = "unknown"
+                
         embed.add_field(name="📦 Version", value=f"`{version}`", inline=True)
+        
+        # Environment info
+        embed.add_field(
+            name="🔧 Environment", 
+            value=f"ENV: {os.getenv('ENVIRONMENT', 'unknown')}\n"
+                  f"Network: bot-network\n"
+                  f"Subnet: 172.20.0.0/16", 
+            inline=True
+        )
+        
+        # Container filesystem info
+        try:
+            with open('/etc/hostname', 'r') as f:
+                container_id = f.read().strip()
+            embed.add_field(name="🆔 Container ID", value=f"`{container_id}`", inline=True)
+        except:
+            pass
         
         await ctx.send(embed=embed)
 
